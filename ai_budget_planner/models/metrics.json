@@ -1,0 +1,52 @@
+{
+ "categorizer": {
+  "LogisticRegression": {
+   "accuracy": 0.9719373988127361,
+   "macro_f1": 0.9747918970803945
+  },
+  "LinearSVC": {
+   "accuracy": 0.9707231516459794,
+   "macro_f1": 0.9733352803556582
+  },
+  "deployed_LogReg_conf>=0.6": {
+   "coverage": 0.9588505126821371,
+   "accuracy_on_covered": 0.9963416350077389
+  }
+ },
+ "forecaster": {
+  "results": {
+   "naive_last_month": {
+    "MAE": 1442.227638888889,
+    "MAPE": 24.82217111535448
+   },
+   "mean_last_3": {
+    "MAE": 1391.6913425925925,
+    "MAPE": 24.475072437334454
+   },
+   "GradientBoosting": {
+    "MAE": 1120.4571391736154,
+    "MAPE": 18.361047256190865
+   },
+   "RandomForest": {
+    "MAE": 1033.0219669789778,
+    "MAPE": 17.632547929022255
+   }
+  },
+  "deployed": "RandomForest",
+  "real_examples": 0
+ },
+ "overspend": {
+  "accuracy": 0.7743827160493827,
+  "auc": 0.7707742362293536,
+  "baseline_runrate_auc": 0.6115118700315594
+ },
+ "anomaly": {
+  "precision": 0.20754716981132076,
+  "recall": 0.4301675977653631,
+  "f1": 0.28
+ },
+ "data": {
+  "synthetic_rows": 37056,
+  "real_rows": 0
+ }
+}

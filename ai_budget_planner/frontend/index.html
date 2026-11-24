@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI Budget Planner</title><link rel="stylesheet" href="style.css">
+</head>
+<body>
+<section id="auth" class="auth">
+  <div class="hero">
+    <div class="logo big">💰</div><h1>AI Budget Planner</h1>
+    <p>Track every rupee. The moment you overspend, your budget re-plans itself and tells you why.</p>
+    <ul class="feats">
+      <li><span>🧠</span><div><b>Trained models</b><small>categorise payments and spot unusual spending</small></div></li>
+      <li><span>⚖️</span><div><b>Smart re-planning</b><small>rent stays fixed, food is protected, extras are cut first</small></div></li>
+      <li><span>💬</span><div><b>Plain-language reasons</b><small>every change is explained in simple points</small></div></li>
+    </ul>
+  </div>
+  <div class="card authcard">
+    <h2>Welcome</h2><p class="note">Log in or create an account. Your data stays separate from everyone else's.</p>
+    <div class="seg"><button id="tabLogin" class="on">Log in</button><button id="tabRegister">Register</button></div>
+    <div id="loginForm">
+      <label>Username<input id="lUser" autocomplete="username"></label>
+      <label>Password<input id="lPass" type="password" autocomplete="current-password"></label>
+      <button id="lGo" class="primary wide">Log in</button>
+    </div>
+    <div id="regForm" hidden>
+      <label>Choose a username<input id="rUser" autocomplete="username"></label>
+      <label>Choose a password (6+ characters)<input id="rPass" type="password" autocomplete="new-password"></label>
+      <label>Repeat password<input id="rPass2" type="password" autocomplete="new-password"></label>
+      <button id="rGo" class="primary wide">Create account</button>
+    </div>
+    <div id="authMsg" class="msg bad" hidden></div>
+  </div>
+</section>
+
+<div id="app" hidden>
+  <header class="top">
+    <div class="brand"><span class="logo">💰</span><b>AI Budget Planner</b></div>
+    <div class="topr"><button id="theme" class="icon" title="Light / dark">🌓</button><span class="user">👤 <b id="who"></b></span><button id="logout" class="ghost">Log out</button></div>
+  </header>
+  <div class="app">
+    <aside class="side">
+      <label>Month<select id="monthSel"></select></label>
+      <h2 id="planTitle">Budget</h2><p id="planNote" class="note"></p>
+      <label>Income / total money (₹)<input id="inc" type="number" min="0" step="1000"></label>
+      <p class="note small">Money you receive later ("Received from…") is added to this automatically.</p>
+      <label>Savings goal (₹)<input id="goal" type="number" min="0" step="500"></label>
+      <div id="budgets"></div>
+      <p id="planTotal" class="note"></p><div id="planMsg" class="msg" hidden></div>
+      <button id="savePlan" class="primary wide">Save plan</button>
+    </aside>
+
+    <main>
+      <div class="titlebar"><h1 id="title"></h1></div>
+      <nav class="tabs">
+        <button data-tab="add" class="on">➕ Add expense</button>
+        <button data-tab="month">📊 This month</button>
+        <button data-tab="hist">📅 Months &amp; import</button>
+      </nav>
+
+      <section id="tab-add">
+        <div class="card pad">
+          <div class="seg left">
+            <label><input type="radio" name="mode" value="text" checked> ⌨️ Type it</label>
+            <label><input type="radio" name="mode" value="shot"> 📷 Payment screenshot</label>
+          </div>
+          <div id="textMode">
+            <div class="row"><input id="txt" class="grow big" placeholder="e.g. spent 200 on tea   ·   received 500 from Rahul"><input id="txtDate" type="date"><button id="addBtn" class="primary">Add</button></div>
+            <div class="chips"><span class="note small">Try:</span><button class="chip" data-ex="spent 200 on tea">spent 200 on tea</button><button class="chip" data-ex="12000 on food">12000 on food</button><button class="chip" data-ex="received 5000 from rahul">received 5000 from rahul</button></div>
+          </div>
+          <div id="shotMode" hidden>
+            <div class="row"><label class="drop grow"><input id="shotFile" type="file" accept="image/png,image/jpeg"><span>📷 <b>Choose a GPay / PhonePe / Paytm screenshot</b><small id="fname">PNG or JPG</small></span></label><button id="readShot" class="primary">Read screenshot</button></div>
+            <div id="review"></div>
+          </div>
+        </div>
+        <div id="result"></div>
+      </section>
+
+      <section id="tab-month" hidden>
+        <div id="noPlan" class="empty" hidden></div>
+        <div id="monthBody"><div id="cards" class="cards"></div><p id="incNote" class="note"></p><div id="planBox"></div></div>
+        <h3>Expenses this month</h3><div id="exTable" class="card tablewrap"></div>
+        <div id="rcBox"></div>
+      </section>
+
+      <section id="tab-hist" hidden>
+        <h3>How much you saved each month</h3>
+        <p class="note">Saved = income + money received − what you spent. The current month is still in progress, so its number will go down as you add expenses.</p>
+        <div class="card pad"><div id="saveChart" class="hbars"></div><p id="histTotal"></p></div>
+        <div id="sumTable" class="card tablewrap"></div>
+        <details class="card pad"><summary>📥 Import past expenses</summary>
+          <p class="note">Upload a bank / UPI statement (CSV or PDF). You can check every row before it is saved.</p>
+          <input id="impFile" type="file" accept=".csv,.pdf"><div id="impPreview"></div>
+        </details>
+      </section>
+    </main>
+  </div>
+</div>
+<div id="toast" class="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>
