@@ -9,14 +9,40 @@ const label = ym => { const [y, m] = ym.split('-').map(Number); return new Date(
 const ICON = {Food: '🍽️', Transport: '🚌', Rent: '🏠', Bills: '💡', Shopping: '🛍️', Entertainment: '🎬', Health: '💊', Education: '📚', Other: '📦'};
 const S = {token: localStorage.getItem('token'), cats: [], type: {}, ym: curYm, summary: [], month: null, shot: null};
 
+
+const API_BASE_URL = "https://ai-budget-planner-niai.onrender.com";
+
 // ---------- helpers ----------
 async function api(path, {method = 'GET', body, form} = {}) {
-  const h = {}; if (S.token) h.Authorization = 'Bearer ' + S.token;
-  let b; if (form) b = form; else if (body !== undefined) { h['Content-Type'] = 'application/json'; b = JSON.stringify(body); }
-  const r = await fetch('/api' + path, {method, headers: h, body: b});
-  if (r.status === 401 && S.token) { signOut(); throw new Error('Please log in again.'); }
+  const h = {};
+  if (S.token) h.Authorization = 'Bearer ' + S.token;
+
+  let b;
+  if (form) b = form;
+  else if (body !== undefined) {
+    h['Content-Type'] = 'application/json';
+    b = JSON.stringify(body);
+  }
+
+  const r = await fetch(API_BASE_URL + '/api' + path, {
+    method,
+    headers: h,
+    body: b
+  });
+
+  if (r.status === 401 && S.token) {
+    signOut();
+    throw new Error('Please log in again.');
+  }
+
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : 'Something went wrong. Check the details you entered.');
+
+  if (!r.ok) {
+    throw new Error(typeof j.detail === 'string'
+      ? j.detail
+      : 'Something went wrong. Check the details you entered.');
+  }
+
   return j;
 }
 function toast(msg, bad) { const t = $('#toast'); t.textContent = msg; t.hidden = false; t.style.background = bad ? 'var(--bad)' : ''; clearTimeout(toast.t); toast.t = setTimeout(() => t.hidden = true, 3500); }

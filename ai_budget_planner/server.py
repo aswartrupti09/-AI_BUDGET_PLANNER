@@ -5,12 +5,27 @@ from datetime import date
 from typing import Optional, Union
 import numpy as np, pandas as pd
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Header
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import core, agents, reasoning, importer, payment_ocr
 from core import CATS, q
 
-app = FastAPI(); core.init_db(); q("CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id INTEGER)")
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://YOUR-VERCEL-DOMAIN.vercel.app"
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+core.init_db()
+q("CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id INTEGER)")
 
 def clean(o):
     """Make anything JSON-safe (numpy numbers, NaN, DataFrames)."""
