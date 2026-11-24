@@ -21,8 +21,16 @@ def clean(o):
     return None if isinstance(o, float) and (o != o or abs(o) == float("inf")) else o
 
 def uid_of(authorization: Optional[str] = Header(None)):
-    r = q("SELECT user_id FROM sessions WHERE token=?", (authorization or "").removeprefix("Bearer ").strip())
-    if not r: raise HTTPException(401, "Please log in.")
+    token = (authorization or "").removeprefix("Bearer ").strip()
+
+    r = q(
+        "SELECT user_id FROM sessions WHERE token=?",
+        token
+    )
+
+    if not r:
+        raise HTTPException(401, "Please log in.")
+
     return r[0][0]
 def session(uid):
     tok = secrets.token_urlsafe(32); q("INSERT INTO sessions VALUES(?,?)", tok, uid); return dict(token=tok, **me(uid))
@@ -49,7 +57,9 @@ def login(b: Cred):
     if not uid: raise HTTPException(400, "Wrong username or password.")
     return session(uid)
 @app.post("/api/logout")
-def logout(authorization: Optional[str] = Header(None)): q("DELETE FROM sessions WHERE token=?", (authorization or "").removeprefix("Bearer ").strip())
+def logout(authorization: Optional[str] = Header(None)):
+    token = (authorization or "").removeprefix("Bearer ").strip()
+    q("DELETE FROM sessions WHERE token=?", token)
 
 # ---------- plans and months ----------
 @app.get("/api/plan/{ym}")
