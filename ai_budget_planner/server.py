@@ -17,7 +17,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://aibudgetplanner-frontend-j7iogjl1f-me-1502.vercel.app/"
+        "https://aibudgetplanner-frontend-j7iogjl1f-me-1502.vercel.app"
     ],
     allow_credentials=True,
     allow_methods=["*"],
