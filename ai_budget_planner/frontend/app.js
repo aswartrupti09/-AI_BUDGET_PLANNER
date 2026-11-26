@@ -10,7 +10,7 @@ const ICON = {Food: '🍽️', Transport: '🚌', Rent: '🏠', Bills: '💡', S
 const S = {token: localStorage.getItem('token'), cats: [], type: {}, ym: curYm, summary: [], month: null, shot: null};
 
 
-const API_BASE_URL = "https://ai-budget-planner-niai.onrender.com";
+const API_BASE_URL = "";
 
 // ---------- helpers ----------
 async function api(path, {method = 'GET', body, form} = {}) {
