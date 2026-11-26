@@ -1,5 +1,5 @@
 """Payment screenshot -> amount, merchant, date, paid/received. OCR + regex; the rupee sign is settled by looking at the pixels."""
-import base64, io, json, os, re
+import base64, io, json, os, re, threading
 from collections import Counter
 from datetime import date
 from pathlib import Path
@@ -10,18 +10,24 @@ CAL = Path(__file__).parent / "data" / "ocr_calib.json"   # remembers how this p
 CUR, NUM = r"(?:₹|rs\.?|inr|[?%])", r"(\d[\d,]*(?:\.\d{1,2})?)"
 SKIP = r"up\s*to|limit|cashback|offer|reward|balance|secure|utr|\bid\b|ref|\d{1,2}:\d{2}"           # promo text, IDs, times
 ALONE = r"[^\w\s]?\s*[zZtT]?\s*(\d{1,3}(?:,\d{3})+(?:\.\d{1,2})?|\d{1,6}(?:\.\d{1,2})?)\s*[^\w\s]?"   # a line that is just a number
+_lock = threading.Lock()      # one OCR job at a time, so two uploads can't double the memory use
 _num = lambda s: float(s.replace(",", ""))
 
 def tokens(img):
-    """-> [(box, text)] with box = 4 corner points. EasyOCR if installed, else Tesseract."""
+    """-> [(box, text)] with box = 4 corner points. Engine: RapidOCR (light, pip-only: best for small servers like Render's free plan),
+    else EasyOCR (heavy: loads PyTorch, ~1 GB RAM), else Tesseract (needs the Tesseract program installed)."""
+    global _R
     try:
-        import easyocr; global _R
-        _R = globals().get("_R") or easyocr.Reader(["en"], gpu=False)
-        return [(b, t) for b, t, _ in _R.readtext(np.array(img))]
-    except ImportError:
-        import pytesseract
-        d = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
-        return [([[x, y], [x+w, y], [x+w, y+h], [x, y+h]], t) for t, x, y, w, h in zip(d["text"], d["left"], d["top"], d["width"], d["height"]) if t.strip()]
+        from rapidocr_onnxruntime import RapidOCR
+        _R = globals().get("_R") or RapidOCR(); res, _ = _R(np.array(img)); return [(b, t) for b, t, _ in res or []]
+    except ImportError: pass
+    try:
+        import easyocr
+        _R = globals().get("_R") or easyocr.Reader(["en"], gpu=False); return [(b, t) for b, t, _ in _R.readtext(np.array(img))]
+    except ImportError: pass
+    import pytesseract
+    d = pytesseract.image_to_data(img, output_type=pytesseract.Output.DICT)
+    return [([[x, y], [x+w, y], [x+w, y+h], [x, y+h]], t) for t, x, y, w, h in zip(d["text"], d["left"], d["top"], d["width"], d["height"]) if t.strip()]
 
 def rupee_verdict(img, box, text):
     """Count separate ink shapes in the amount's box (Rs70 = 3: sign, 7, 0) and compare with the characters OCR read.
@@ -63,10 +69,11 @@ def find_amount(t):
     return best, alt, None, best, best in sym
 
 def parse_text(t):
+    t = re.sub(r"(?<=\d )0ct\b", "Oct", t)      # OCR often reads the letter O as a zero
     got = re.search(r"received from|money received|credited|you received", t, re.I) and not re.search(r"paid to|payment to|sent to", t, re.I)
     mer = re.search(r"(?:received from|paid to|payment to|sent to|\bto\b|\bfrom\b|paid at|merchant)\s*:?\s*([A-Za-z][\w &.'-]{2,40})", t, re.I)
     d = DATE_RE.search(t); amt, alt, fixed, raw, sym = find_amount(t)
-    return dict(amount=amt, alt_amount=alt, auto_fixed=fixed, raw_amount=raw, has_symbol=sym, description=mer[1].strip() if mer else "upi payment",
+    return dict(amount=amt, alt_amount=alt, auto_fixed=fixed, raw_amount=raw, has_symbol=sym, description=re.sub(r"(\s+[₹\d,.]+)+$", "", mer[1].strip()) if mer else "upi payment",
                 date=(d and _iso(d[1])) or date.today().isoformat(), source="screenshot", kind="income" if got else "expense")
 
 def _vision(b):
@@ -82,7 +89,9 @@ def extract(b):
     from PIL import Image
     out, raw, err, toks = dict(amount=None), "", "", []
     try:
-        img = Image.open(io.BytesIO(b)).convert("RGB"); toks = tokens(img); raw = "\n".join(t for _, t in toks); out = parse_text(raw)
+        img = Image.open(io.BytesIO(b)).convert("RGB"); img.thumbnail((2000, 2000))      # phone screenshots can be huge; text stays readable at this size
+        with _lock: toks = [] if os.getenv("OCR_ENGINE") == "vision" else tokens(img)      # OCR_ENGINE=vision skips local OCR and uses Claude vision only
+        raw = "\n".join(t for _, t in toks); out = parse_text(raw)
         if out["raw_amount"] is not None and not out["has_symbol"]:       # settle the rupee sign from the pixels
             for box, text in toks:
                 tx = text.strip()
@@ -91,7 +100,7 @@ def extract(b):
                     if v == "digit" and len(tx) >= 2 and tx[1:].strip("0,."): out.update(amount=_num(tx[1:]), alt_amount=None, auto_fixed=f"'{tx[0]}' (rupee sign) removed using image")
                     elif v == "dropped": out.update(amount=_num(tx), alt_amount=None, auto_fixed=None)
                     break
-    except ImportError: err = "No OCR engine installed. Run: pip install easyocr   (or pytesseract + Tesseract)"
+    except ImportError: err = "No OCR engine installed. Run: pip install rapidocr-onnxruntime"
     except Exception as e: err = f"OCR failed: {type(e).__name__}: {e}"
     if (out.get("amount") is None or out.get("description") == "upi payment") and os.getenv("ANTHROPIC_API_KEY"):
         try: out, err = _vision(b), ""

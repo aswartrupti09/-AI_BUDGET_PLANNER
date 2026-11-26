@@ -19,7 +19,7 @@ Optional: `export ANTHROPIC_API_KEY=...` makes Claude write the explanation of a
 | `core.py` | Database, models, anomaly cleaning, category rules (fixed / necessity / optional), budget optimiser, plan-change log with undo |
 | `agents.py` | LangGraph pipeline with four agents: capture, record, monitor, planner (the planner changes the budgets when spending breaks them) |
 | `reasoning.py` | Why a budget changed, by category type (rent fixed, food a necessity, shopping optional); AI explanation (Claude if a key is set, numbers verified; else built-in) |
-| `payment_ocr.py` | Screenshot to amount, merchant, date, paid/received (OCR + image check for the rupee sign) |
+| `payment_ocr.py` | Screenshot to amount, merchant, date, paid/received (RapidOCR + image check for the rupee sign) |
 | `importer.py` | CSV / PDF statements to rows (previewed before saving); also reads real training datasets |
 | `train.py` | Trains and evaluates all models; writes `models/` |
 | `data_gen.py` | Synthetic training data. Used by `train.py` only, never shown in the app |
@@ -32,3 +32,10 @@ Metrics are in `models/metrics.json` and printed by `train.py`. The forecaster f
 Put any expense CSV at `data/real.csv` and run `python train.py`. Columns (date, description, amount, category, debit/credit, user) are found by name,
 and the dataset's own category labels are mapped onto ours by `importer.py` (edit `LABELS` there to add words). Training then also reports accuracy on
 held-out real merchants. Delete `data/real.csv` to go back to synthetic-only training.
+
+## Deploying on Render
+* Build command: `pip install -r requirements.txt && python train.py`   Start command: `uvicorn server:app --host 0.0.0.0 --port $PORT` (one worker only; each extra worker repeats the memory use).
+* Set the environment variable `PYTHON_VERSION` to a 3.12 release. Do **not** install `easyocr`: it loads PyTorch (about 1 GB of RAM) and will crash a 512 MB instance.
+* Memory with screenshot reading (RapidOCR) was about 320 MB at its peak in testing. If the instance is still too small, set `OCR_ENGINE=vision` and `ANTHROPIC_API_KEY` to read screenshots with Claude instead (no local OCR memory).
+* The free plan sleeps after about 15 minutes idle, so the first request after a pause is slow.
+* SQLite lives on Render's temporary disk and is erased on every deploy or restart. For real use, attach a persistent disk or move to Postgres.

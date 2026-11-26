@@ -5,27 +5,12 @@ from datetime import date
 from typing import Optional, Union
 import numpy as np, pandas as pd
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Header
-from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import core, agents, reasoning, importer, payment_ocr
 from core import CATS, q
 
-
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "https://aibudgetplanner-frontend-j7iogjl1f-me-1502.vercel.app"
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-core.init_db()
-q("CREATE TABLE IF NOT EXISTS sessions (token TEXT PRIMARY KEY, user_id INTEGER)")
+app = FastAPI(); core.init_db(); q("CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id INTEGER)")
 
 def clean(o):
     """Make anything JSON-safe (numpy numbers, NaN, DataFrames)."""
@@ -36,16 +21,8 @@ def clean(o):
     return None if isinstance(o, float) and (o != o or abs(o) == float("inf")) else o
 
 def uid_of(authorization: Optional[str] = Header(None)):
-    token = (authorization or "").removeprefix("Bearer ").strip()
-
-    r = q(
-        "SELECT user_id FROM sessions WHERE token=?",
-        token
-    )
-
-    if not r:
-        raise HTTPException(401, "Please log in.")
-
+    r = q("SELECT user_id FROM sessions WHERE token=?", (authorization or "").removeprefix("Bearer ").strip())
+    if not r: raise HTTPException(401, "Please log in.")
     return r[0][0]
 def session(uid):
     tok = secrets.token_urlsafe(32); q("INSERT INTO sessions VALUES(?,?)", tok, uid); return dict(token=tok, **me(uid))
@@ -72,9 +49,7 @@ def login(b: Cred):
     if not uid: raise HTTPException(400, "Wrong username or password.")
     return session(uid)
 @app.post("/api/logout")
-def logout(authorization: Optional[str] = Header(None)):
-    token = (authorization or "").removeprefix("Bearer ").strip()
-    q("DELETE FROM sessions WHERE token=?", token)
+def logout(authorization: Optional[str] = Header(None)): q("DELETE FROM sessions WHERE token=?", (authorization or "").removeprefix("Bearer ").strip())
 
 # ---------- plans and months ----------
 @app.get("/api/plan/{ym}")
@@ -118,8 +93,8 @@ def safe(fn, *a, **k):
 @app.post("/api/expense/text")
 def expense_text(b: TextIn, uid: int = Depends(uid_of)): return shape(safe(agents.run, uid, text=b.text, on_date=b.date))
 @app.post("/api/expense/screenshot")
-async def screenshot(file: UploadFile = File(...), uid: int = Depends(uid_of)):
-    r = payment_ocr.extract(await file.read())
+def screenshot(file: UploadFile = File(...), uid: int = Depends(uid_of)):     # plain 'def': FastAPI runs it in a worker thread, so slow OCR can't freeze the site
+    r = payment_ocr.extract(file.file.read())
     if r.get("kind") != "income": r["suggested"], r["confidence"], r["suggest_source"] = safe(core.predict_category_ex, r["description"], uid)
     return clean(r)
 @app.post("/api/expense/confirm")
@@ -134,8 +109,8 @@ def delete(tid: int, uid: int = Depends(uid_of)): core.delete_txn(uid, tid)
 
 # ---------- import ----------
 @app.post("/api/import/preview")
-async def import_preview(file: UploadFile = File(...), uid: int = Depends(uid_of)):
-    f = io.BytesIO(await file.read()); f.name = file.filename or "file"; text = ""
+def import_preview(file: UploadFile = File(...), uid: int = Depends(uid_of)):
+    f = io.BytesIO(file.file.read()); f.name = file.filename or "file"; text = ""
     try: df = importer.parse(f)
     except Exception as e: raise HTTPException(400, str(e))
     pdf = f.name.lower().endswith(".pdf")

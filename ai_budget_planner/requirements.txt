@@ -1,4 +1,3 @@
-python-dotenv
 pandas
 numpy
 scikit-learn
@@ -6,7 +5,7 @@ scipy
 joblib
 langgraph
 pillow
-easyocr        # or: pytesseract (+ Tesseract installed)
+rapidocr-onnxruntime   # reads payment screenshots; light enough for small servers (EasyOCR needs ~1 GB RAM)
 anthropic      # optional: LLM advisor + vision fallback (set ANTHROPIC_API_KEY)
 pypdf          # reading PDF statements
 fastapi        # backend API for the HTML/CSS/JS frontend
