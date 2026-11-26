@@ -12,6 +12,7 @@ from core import CATS, q
 
 app = FastAPI(); core.init_db(); q("CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id INTEGER)")
 
+
 def clean(o):
     """Make anything JSON-safe (numpy numbers, NaN, DataFrames)."""
     if isinstance(o, pd.DataFrame): o = o.to_dict("records")
@@ -52,12 +53,29 @@ def login(b: Cred):
 def logout(authorization: Optional[str] = Header(None)): q("DELETE FROM sessions WHERE token=?", (authorization or "").removeprefix("Bearer ").strip())
 
 # ---------- plans and months ----------
+
 @app.get("/api/plan/{ym}")
 def get_plan(ym: str, uid: int = Depends(uid_of)):
-    pl, prev = core.get_plan(uid, ym), core.last_plan_ym(uid, ym); pp = pl or (core.get_plan(uid, prev) if prev else None)
-    default = (40000, 8000, dict(Food=7000, Transport=3000, Rent=15000, Bills=2500, Shopping=4000, Entertainment=2500, Health=1000, Education=500, Other=1000))
-    income, goal, budgets = pp or default
-    return dict(exists=bool(pl), income=income, goal=goal, budgets=budgets, prefilled_from=None if pl or not pp else prev)
+    pl = core.get_plan(uid, ym)
+
+    if pl:
+        income, goal, budgets = pl
+        return dict(
+            exists=True,
+            income=income,
+            goal=goal,
+            budgets=budgets,
+            prefilled_from=None
+        )
+
+    return dict(
+        exists=False,
+        income=0,
+        goal=0,
+        budgets={cat: 0 for cat in CATS},
+        prefilled_from=None
+    )
+
 @app.put("/api/plan/{ym}")
 def put_plan(ym: str, b: PlanIn, uid: int = Depends(uid_of)):
     if sum(b.budgets.values()) + b.goal > b.income: raise HTTPException(400, "Budgets plus savings are more than income.")
