@@ -76,33 +76,162 @@ def parse_text(t):
     return dict(amount=amt, alt_amount=alt, auto_fixed=fixed, raw_amount=raw, has_symbol=sym, description=re.sub(r"(\s+[₹\d,.]+)+$", "", mer[1].strip()) if mer else "upi payment",
                 date=(d and _iso(d[1])) or date.today().isoformat(), source="screenshot", kind="income" if got else "expense")
 
+
 def _vision(b):
-    import anthropic
-    r = anthropic.Anthropic().messages.create(model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"), max_tokens=300, messages=[{"role": "user", "content": [
-        {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": base64.b64encode(b).decode()}},
-        {"type": "text", "text": 'Payment screenshot. Reply ONLY JSON: {"amount": number, "merchant": str, "date": "YYYY-MM-DD", "received": true|false}'}]}])
-    j = json.loads(re.search(r"\{.*\}", r.content[0].text, re.S)[0])
-    return dict(amount=float(j["amount"]), description=j.get("merchant", "upi payment"), date=j.get("date") or date.today().isoformat(),
-                source="screenshot-vision", kind="income" if j.get("received") else "expense")
+    import urllib.request
+    import urllib.error
+    from PIL import Image, ImageOps
+
+    key = os.getenv("GEMINI_API_KEY")
+    if not key:
+        raise RuntimeError("GEMINI_API_KEY is missing in Render")
+
+    # Prepare a smaller image for Gemini
+    img = Image.open(io.BytesIO(b))
+    img = ImageOps.exif_transpose(img).convert("RGB")
+    img.thumbnail((1400, 1400))
+
+    buffer = io.BytesIO()
+    img.save(buffer, format="JPEG", quality=85)
+    image_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
+
+    prompt = """
+    Read this payment screenshot.
+    Return ONLY JSON in this exact format:
+    {
+      "amount": 250,
+      "merchant": "Merchant name",
+      "date": "2026-11-26",
+      "received": false
+    }
+
+    amount must be the actual payment amount.
+    merchant is the sender or receiver name if visible.
+    date must be YYYY-MM-DD.
+    received=true means money came into the user's account.
+    received=false means the user paid money.
+    Do not guess. If the amount is not visible, use null.
+    """
+
+    payload = {
+        "contents": [{
+            "parts": [
+                {"text": prompt},
+                {
+                    "inline_data": {
+                        "mime_type": "image/jpeg",
+                        "data": image_data
+                    }
+                }
+            ]
+        }],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "temperature": 0
+        }
+    }
+
+    url = (
+        "https://generativelanguage.googleapis.com/v1beta/"
+        "models/gemini-2.5-flash-lite:generateContent"
+    )
+
+    request = urllib.request.Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Content-Type": "application/json",
+            "x-goog-api-key": key
+        },
+        method="POST"
+    )
+
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        details = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"Gemini API error {e.code}: {details[:400]}")
+
+    text = result["candidates"][0]["content"]["parts"][0]["text"]
+    data = json.loads(text)
+
+    amount = data.get("amount")
+    if amount is None or float(amount) <= 0:
+        raise ValueError("Gemini could not identify a valid payment amount")
+
+    return {
+        "amount": float(amount),
+        "description": data.get("merchant") or "upi payment",
+        "date": data.get("date") or date.today().isoformat(),
+        "source": "screenshot-gemini",
+        "kind": "income" if data.get("received") is True else "expense"
+    }
+
+
 
 def extract(b):
     from PIL import Image
+
+    if os.getenv("OCR_ENGINE", "").lower() == "vision":
+        try:
+            out = _vision(b)
+            return {
+                "description": "upi payment",
+                "date": date.today().isoformat(),
+                "source": "screenshot",
+                **out,
+                "raw_text": "",
+                "error": ""
+            }
+        except Exception as e:
+            return {
+                "amount": None,
+                "description": "upi payment",
+                "date": date.today().isoformat(),
+                "source": "screenshot",
+                "raw_text": "",
+                "error": f"Gemini vision failed: {e}"
+            }
+
     out, raw, err, toks = dict(amount=None), "", "", []
+
     try:
-        img = Image.open(io.BytesIO(b)).convert("RGB"); img.thumbnail((2000, 2000))      # phone screenshots can be huge; text stays readable at this size
-        with _lock: toks = [] if os.getenv("OCR_ENGINE") == "vision" else tokens(img)      # OCR_ENGINE=vision skips local OCR and uses Claude vision only
-        raw = "\n".join(t for _, t in toks); out = parse_text(raw)
-        if out["raw_amount"] is not None and not out["has_symbol"]:       # settle the rupee sign from the pixels
+        img = Image.open(io.BytesIO(b)).convert("RGB")
+        img.thumbnail((2000, 2000))
+        with _lock:
+            toks = tokens(img)
+
+        raw = "\n".join(t for _, t in toks)
+        out = parse_text(raw)
+
+        if out["raw_amount"] is not None and not out["has_symbol"]:
             for box, text in toks:
                 tx = text.strip()
                 if re.fullmatch(r"\d[\d,]*(?:\.\d{1,2})?", tx) and _num(tx) == out["raw_amount"]:
-                    v, info = rupee_verdict(img, box, tx); out["glyph_info"] = f"{info} -> {v or 'unclear'}"
-                    if v == "digit" and len(tx) >= 2 and tx[1:].strip("0,."): out.update(amount=_num(tx[1:]), alt_amount=None, auto_fixed=f"'{tx[0]}' (rupee sign) removed using image")
-                    elif v == "dropped": out.update(amount=_num(tx), alt_amount=None, auto_fixed=None)
+                    v, info = rupee_verdict(img, box, tx)
+                    out["glyph_info"] = f"{info} -> {v or 'unclear'}"
+                    if v == "digit" and len(tx) >= 2 and tx[1:].strip("0,."):
+                        out.update(amount=_num(tx[1:]), alt_amount=None,
+                                   auto_fixed=f"'{tx[0]}' (rupee sign) removed using image")
+                    elif v == "dropped":
+                        out.update(amount=_num(tx), alt_amount=None, auto_fixed=None)
                     break
-    except ImportError: err = "No OCR engine installed. Run: pip install rapidocr-onnxruntime"
-    except Exception as e: err = f"OCR failed: {type(e).__name__}: {e}"
-    if (out.get("amount") is None or out.get("description") == "upi payment") and os.getenv("ANTHROPIC_API_KEY"):
-        try: out, err = _vision(b), ""
-        except Exception as e: err += f" | vision fallback failed: {e}"
-    return {"description": "upi payment", "date": date.today().isoformat(), "source": "screenshot", **out, "raw_text": raw, "error": err}
+
+    except Exception as e:
+        err = f"OCR failed: {type(e).__name__}: {e}"
+
+    if (out.get("amount") is None or out.get("description") == "upi payment") and os.getenv("GEMINI_API_KEY"):
+        try:
+            out, err = _vision(b), ""
+        except Exception as e:
+            err += f" | Gemini fallback failed: {e}"
+
+    return {
+        "description": "upi payment",
+        "date": date.today().isoformat(),
+        "source": "screenshot",
+        **out,
+        "raw_text": raw,
+        "error": err
+    }
