@@ -166,7 +166,8 @@ def predict_category_ex(desc, uid=None):
 def predict_category(desc, uid=None): return predict_category_ex(desc, uid)[:2]
 
 def overspend_risk(spent, budget, day_frac, cat):
-    if budget <= 0: return 1.0
+    if budget <= 0:
+        return 1.0 if spent > 0 else 0.0
     return float(load("overspend")["model"].predict_proba([[spent/budget, day_frac, np.log1p(budget), CATS.index(cat)]])[0][1])
 
 def _outlier(amount, ref):
